@@ -1,0 +1,144 @@
+name: ${COMPOSE_PROJECT_NAME:-xampp}
+
+services:
+  web:
+    build:
+      context: ./docker/php
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+    image: ${PHP_IMAGE:-${COMPOSE_PROJECT_NAME:-xampp}/php:${PHP_VERSION:-8.3}}
+    container_name: ${COMPOSE_PROJECT_NAME:-xampp}-web
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-80}:80"
+    volumes:
+      - ./www:/var/www/html
+      - ./data/moodledata:/var/moodledata
+      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/zz-app.ini:ro
+      - ./docker/apache/000-default.conf:/etc/apache2/sites-enabled/000-default.conf:ro
+      - ./docker/apache/010-projects.conf:/etc/apache2/sites-enabled/010-projects.conf:ro
+      - ./data/apache-vhosts:/etc/apache2/stack-vhosts:ro
+    environment:
+      TZ: ${TZ:-UTC}
+      XDEBUG_MODE: ${XDEBUG_MODE:-develop}
+      WEB_PORT: ${WEB_PORT:-80}
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: ${DB_DATABASE:-dev}
+      DB_USERNAME: ${DB_USER:-dev}
+      DB_PASSWORD: ${DB_PASSWORD:-dev}
+      PMA_PORT: ${PMA_PORT:-8080}
+      MAILPIT_UI_PORT: ${MAILPIT_UI_PORT:-8025}
+      JENKINS_PORT: ${JENKINS_PORT:-8081}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - stack
+
+  db:
+    image: mysql:8.4
+    container_name: ${COMPOSE_PROJECT_NAME:-xampp}-db
+    restart: unless-stopped
+    command:
+      - --sql-mode=NO_ENGINE_SUBSTITUTION
+      - --max-allowed-packet=64M
+      - --innodb-buffer-pool-size=256M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_DATABASE:-dev}
+      MYSQL_USER: ${DB_USER:-dev}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-dev}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - stack
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: ${COMPOSE_PROJECT_NAME:-xampp}-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PMA_PORT:-8080}:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: "3306"
+      UPLOAD_LIMIT: 256M
+      TZ: ${TZ:-UTC}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - stack
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-xampp}-mailpit
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${BIND_ADDRESS:-127.0.0.1}:${MAILPIT_UI_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+      TZ: ${TZ:-UTC}
+    networks:
+      - stack
+
+  jenkins:
+    profiles:
+      - ci
+    build:
+      context: ./docker/jenkins
+    image: ${JENKINS_IMAGE:-${COMPOSE_PROJECT_NAME:-xampp}/jenkins:lts}
+    container_name: ${COMPOSE_PROJECT_NAME:-xampp}-jenkins
+    restart: unless-stopped
+    user: root
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${JENKINS_PORT:-8081}:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:${JENKINS_AGENT_PORT:-50000}:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: ${TZ:-UTC}
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=true
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    networks:
+      - stack
+
+volumes:
+  db_data:
+  jenkins_home:
+
+networks:
+  stack:
+    name: ${COMPOSE_PROJECT_NAME:-xampp}-net

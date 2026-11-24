@@ -1,0 +1,43 @@
+# Environment secrets and local overrides
+.env
+.env.local
+.env.*.local
+
+# Database and application data directories
+data/moodledata/
+data/apache-vhosts/*.conf
+!data/apache-vhosts/.gitkeep
+!data/.gitkeep
+
+# Database backups
+backups/*
+!backups/.gitkeep
+
+# User projects in www root (keep dashboard)
+www/*
+!www/index.php
+!www/.gitkeep
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Logs
+*.log
+logs/
+
+# IDE and editors
+.idea/
+*.swp
+*.swo
+*~
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Local workspace scratch & attachments
+.freebuff/
+.cloud-attachments/
+mytesting.txt
